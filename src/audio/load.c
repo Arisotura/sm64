@@ -1846,7 +1846,7 @@ void audio_init() {
     D_EU_802298D0 = 20.03042f;
     gRefreshRate = 50;
     port_eu_init();
-    if (k) {
+    if (k) { // consider k
     }
 #else
     D_EU_802298D0 = 16.713f;

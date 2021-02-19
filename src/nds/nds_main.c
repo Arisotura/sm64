@@ -16,6 +16,9 @@ s8 gDebugLevelSelect;
 s8 gShowProfiler;
 s8 gShowDebugText;
 
+extern void arm7_setup();
+extern void create_next_audio_buffer();
+
 void set_vblank_handler(UNUSED s32 index, UNUSED struct VblankHandler *handler, UNUSED OSMesgQueue *queue, UNUSED OSMesg *msg) {
 }
 
@@ -24,6 +27,8 @@ void dispatch_audio_sptask(UNUSED struct SPTask *spTask) {
 
 void send_display_list(struct SPTask *spTask) {
     draw_frame((Gfx*)spTask->task.t.data_ptr);
+
+    create_next_audio_buffer();
 }
 
 int main(void) {
@@ -41,6 +46,8 @@ int main(void) {
 
     audio_init();
     sound_init();
+
+    arm7_setup();
 
     thread5_game_loop(NULL);
 
