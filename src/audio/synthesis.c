@@ -167,9 +167,9 @@ u64 *synthesis_execute(u64 *cmdBuf, s32 *writtenCmds, s16 *aiBuf, s32 bufLen) {
 #if !defined(TARGET_NDS) || !defined(ARM7)
         process_sequences(i - 1);
 #endif
-        if (gSynthesisReverb.useReverb != 0) {
+        /*if (gSynthesisReverb.useReverb != 0) {
             prepare_reverb_ring_buffer(chunkLen, gAudioUpdatesPerFrame - i);
-        }
+        }*/
         cmd = synthesis_do_one_audio_update((s16 *) aiBufPtr, chunkLen, cmd, gAudioUpdatesPerFrame - i);
         bufLen -= chunkLen;
         aiBufPtr += chunkLen;
@@ -195,7 +195,8 @@ u64 *synthesis_do_one_audio_update(s16 *aiBuf, s32 bufLen, u64 *cmd, s32 updateI
 
     v1 = &gSynthesisReverb.items[gSynthesisReverb.curFrame][updateIndex];
 
-    if (gSynthesisReverb.useReverb == 0) {
+	// TODO REVERB SHITO!!!!!
+    if (gSynthesisReverb.useReverb == 0 || 1) {
         aClearBuffer(cmd++, DMEM_ADDR_LEFT_CH, DEFAULT_LEN_2CH);
         cmd = synthesis_process_notes(aiBuf, bufLen, cmd);
     } else {
@@ -308,6 +309,9 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 
     for (noteIndex = 0; noteIndex < gMaxSimultaneousNotes; noteIndex++) {
         note = &gNotes[noteIndex];
+		
+		vu32* channelzorz = (vu32*)(0x04000480 + (noteIndex*0x10));
+		
         //! This function requires note->enabled to be volatile, but it breaks other functions like note_enable.
         //! Casting to a struct with just the volatile bitfield works, but there may be a better way to match.
         if (((struct vNote *)note)->enabled && IS_BANK_LOAD_COMPLETE(note->bankId) == FALSE) {
@@ -339,19 +343,26 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
             resamplingRateFixedPoint = (u16)(s32)(resamplingRate * 32768.0f);
             samplesLenFixedPoint = note->samplePosFrac + (resamplingRateFixedPoint * bufLen) * 2;
             note->samplePosFrac = samplesLenFixedPoint & 0xFFFF; // 16-bit store, can't reuse
+			
+			// freq = thing in hz
+			// timer = 0x10000 - (clockthing / freq)
+			u32 timer = 0x10000 - ((16756991*8) / (u32)resamplingRateFixedPoint);
+			// also fuck these longass variable names. like, what
+			channelzorz[2] = timer & 0xFFFF;
+			channelzorz[0] = 0xE340007F;
 
             if (note->sound == NULL) {
                 // A wave synthesis note (not ADPCM)
 
-                cmd = load_wave_samples(cmd, note, samplesLenFixedPoint >> 0x10);
+                /*cmd = load_wave_samples(cmd, note, samplesLenFixedPoint >> 0x10);
                 noteSamplesDmemAddrBeforeResampling = DMEM_ADDR_UNCOMPRESSED_NOTE + note->samplePosInt * 2;
-                note->samplePosInt += (samplesLenFixedPoint >> 0x10);
+                note->samplePosInt += (samplesLenFixedPoint >> 0x10);*/
                 flags = 0;
             }
             else {
                 // ADPCM note
 
-                audioBookSample = note->sound->sample;
+                /*audioBookSample = note->sound->sample;
 
                 loopInfo = audioBookSample->loop;
                 endPos = loopInfo->end;
@@ -515,7 +526,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                     if (note->finished != FALSE) {
                         break;
                     }
-                }
+                }*/
             }
 
             flags = 0;
@@ -542,6 +553,11 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                 cmd = note_apply_headset_pan_effects(cmd, note, bufLen * 2, flags, leftRight);
             }
         }
+		else
+		{
+			// turn it off, I guess?
+			channelzorz[0] = 0;
+		}
     }
 
     t9 = bufLen * 2;
