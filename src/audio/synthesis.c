@@ -259,6 +259,18 @@ u64 *synthesis_do_one_audio_update(s16 *aiBuf, s32 bufLen, u64 *cmd, s32 updateI
     return cmd;
 }
 
+// ugly shit there
+// but, eh, can we afford to make things pretty when we are running out of time
+#ifdef ARM7
+void aMAJORICC(u8* in, s16* out, int nbytes);
+extern s16* notebuffer;
+#else
+// TODO!! GET RID OF THIS
+// like, why is this being compiled on the ARM9
+void aMAJORICC(u8* in, s16* out, int nbytes) {}
+s16 notebuffer[2];
+#endif
+
 u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
     s32 noteIndex;                           // sp174
     struct Note *note;                       // s7
@@ -310,7 +322,15 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
     for (noteIndex = 0; noteIndex < gMaxSimultaneousNotes; noteIndex++) {
         note = &gNotes[noteIndex];
 		
-		vu32* channelzorz = (vu32*)(0x04000480 + (noteIndex*0x10));
+		const u8 chanoffset[14] = {0x00, 0x20, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0};
+		vu32* hardchan = (vu32*)(0x04000400 + chanoffset[noteIndex]);
+		
+		// TODO: smarter allocation?
+		// how big can notes be?
+		// a note that is more than 1024 samples??
+		// who holds their goddamn piano key for that fucking long
+		// unless they are playing piano while high or something
+		s16* chanbuf = &notebuffer[noteIndex * 4096];
 		
         //! This function requires note->enabled to be volatile, but it breaks other functions like note_enable.
         //! Casting to a struct with just the volatile bitfield works, but there may be a better way to match.
@@ -346,10 +366,10 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 			
 			// freq = thing in hz
 			// timer = 0x10000 - (clockthing / freq)
-			u32 timer = 0x10000 - ((16756991*8) / (u32)resamplingRateFixedPoint);
+			//u32 timer = 0x10000 - ((16756991*8) / (u32)resamplingRateFixedPoint);
 			// also fuck these longass variable names. like, what
-			channelzorz[2] = timer & 0xFFFF;
-			channelzorz[0] = 0xE340007F;
+			//channelzorz[2] = timer & 0xFFFF;
+			//channelzorz[0] = 0xE340007F;
 
             if (note->sound == NULL) {
                 // A wave synthesis note (not ADPCM)
@@ -361,6 +381,53 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
             }
             else {
                 // ADPCM note
+				
+				audioBookSample = note->sound->sample;
+
+                loopInfo = audioBookSample->loop;
+                endPos = loopInfo->end;
+                sampleAddr = audioBookSample->sampleAddr;
+                resampledTempLen = 0;
+                //for (curPart = 0; curPart < nParts; curPart++) 
+				{
+                    nAdpcmSamplesProcessed = 0; // s8
+                    s5 = 0;                     // s4
+
+
+					if (flags == A_INIT)
+					{
+						// init note shit here
+						
+						if (curLoadedBook != audioBookSample->book->book) {
+							u32 nEntries; // v1
+							curLoadedBook = audioBookSample->book->book;
+							nEntries = audioBookSample->book->order * audioBookSample->book->npredictors;
+							aLoadADPCM(cmd++, nEntries * 16, VIRTUAL_TO_PHYSICAL2(curLoadedBook));
+						}
+						
+						// hm. decode all the shit at once. hope it doesn't asplode!
+						u8* sample_in = (u8*)sampleAddr;
+						s16* sample_out = chanbuf;
+						int len = endPos<<1; // 32 output bytes for 9 input bytes??? welp.
+						if (len > 4096) len = 4096; // FIXME!!!!!!!
+						aMAJORICC(sample_in, sample_out, len);
+						
+						// blarg
+						u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
+						
+						hardchan[0] = 0;
+						hardchan[1] = (u32)&sample_out[0];
+						hardchan[2] = (timer & 0xFFFF);
+						hardchan[3] = len>>2;
+						
+						// GO!
+						hardchan[0] = (127) | (64 << 16) | (1<<27) | (1<<29) | (1<<31);
+					}
+
+                    /*if (note->finished != FALSE) {
+                        break;
+                    }*/
+                }
 
                 /*audioBookSample = note->sound->sample;
 
@@ -556,7 +623,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 		else
 		{
 			// turn it off, I guess?
-			channelzorz[0] = 0;
+			hardchan[0] = 0;
 		}
     }
 
