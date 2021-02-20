@@ -169,9 +169,9 @@ f32 gVolRampingRhs128[128] = {
 
 s8 gReverbDownsampleRate = 1;
 s16 gVolume = 0x7FFF;
-s32 gMaxSimultaneousNotes = 14;// TEMP!! 16;
+s32 gMaxSimultaneousNotes = 16;// TEMP!! 16;
 s32 gAudioErrorFlags = 0;
-s8 gAudioUpdatesPerFrame = 4;
+s8 gAudioUpdatesPerFrame = 1;//4;
 
 struct Note *gNotes;
 u8 *gBankLoadStatus9;
@@ -188,10 +188,12 @@ int frame_count;
 
 s16* notebuffer;
 
+extern u32 numdecode;
+
 //---------------------------------------------------------------------------------
 void VblankHandler(void) {
 //---------------------------------------------------------------------------------
-	Wifi_Update();
+	//Wifi_Update();
     frame_count++;
 }
 
@@ -214,6 +216,14 @@ void debug(u32 val1, u32 val2)
 {
 	fifoSendValue32(FIFO_USER_04, val1);
 	fifoSendValue32(FIFO_USER_05, val2);
+}
+
+void audio_generator()
+{
+	u64 cmdBuf[4096];
+	s32 writtenCmds;
+	s16 audio_buffer[528 * 2];
+	synthesis_execute(cmdBuf, &writtenCmds, audio_buffer, 528);
 }
 
 //---------------------------------------------------------------------------------
@@ -275,17 +285,32 @@ int main() {
     SCHANNEL_LENGTH(1) = 528 / 2;
     SCHANNEL_TIMER(1) = SOUND_FREQ(32000);
     SCHANNEL_CR(1) = SOUND_VOL(127) | SOUND_PAN(127) | (1 << 29) | SOUND_ONE_SHOT;*/
+	
+	// 240Hz ~= 0x2217A cycles
+	TIMER_CR(0) = 0;
+	TIMER_CR(1) = 0;
+	irqSet(IRQ_TIMER(1), audio_generator);
+	irqEnable(IRQ_TIMER(1));
+	TIMER_DATA(0) = 0x10000-0x217A;
+	TIMER_CR(0) = TIMER_ENABLE;
+	TIMER_DATA(1) = 0x10000-0x2;
+	TIMER_CR(1) = TIMER_ENABLE | TIMER_IRQ_REQ | TIMER_CASCADE;
 
 	// Keep the ARM7 mostly idle
 	while (!exitflag) {
 		if ( 0 == (REG_KEYINPUT & (KEY_SELECT | KEY_START | KEY_L | KEY_R))) {
 			exitflag = true;
 		}
+		
+		numdecode = 0;
 
+		//for (int derp = 0; derp < 4; derp++)
+		/*{
         u64 cmdBuf[4096];
         s32 writtenCmds;
         s16 audio_buffer[528 * 2];
         synthesis_execute(cmdBuf, &writtenCmds, audio_buffer, 528);
+		}*/
 
         /*for (int i = 0; i < 528; i++) {
             buffer_left[i]  = audio_buffer[i * 2 + 0];
@@ -296,6 +321,7 @@ int main() {
         //SCHANNEL_CR(1) |= SCHANNEL_ENABLE;
 
         if (frame_count == 0) swiWaitForVBlank();
+		//debug(numdecode, frame_count);
         frame_count = 0;
 	}
 	return 0;

@@ -197,7 +197,7 @@ u64 *synthesis_do_one_audio_update(s16 *aiBuf, s32 bufLen, u64 *cmd, s32 updateI
 
 	// TODO REVERB SHITO!!!!!
     if (gSynthesisReverb.useReverb == 0 || 1) {
-        aClearBuffer(cmd++, DMEM_ADDR_LEFT_CH, DEFAULT_LEN_2CH);
+        //aClearBuffer(cmd++, DMEM_ADDR_LEFT_CH, DEFAULT_LEN_2CH);
         cmd = synthesis_process_notes(aiBuf, bufLen, cmd);
     } else {
         if (gReverbDownsampleRate == 1) {
@@ -273,8 +273,27 @@ s16 notebuffer[2];
 void debug(u32 val1, u32 val2) {}
 #endif
 
-u16 chanfreq[14] = {0};
-u8 feuauxprisons[14] = {0};
+u16 chanfreq[16] = {0};
+u8 feuauxprisons[16] = {0};
+u32 databotte[16] = {0};
+u32 numdecode = 0;
+
+void _set_chan_volume_pan(vu32* hardchan, s16 l, s16 r)
+{
+	u32 vol = l+r;
+	u32 pan = (r << 16) / vol;
+	//debug(vol, pan);
+	
+	// volume: goes over 0x2000 -- 0x4000 a safe range I guess
+	// pan: 0x8000=center
+	
+	vol >>= 7;
+	if (vol > 0x7F) vol = 0x7F;
+	pan >>= 9;
+	if (pan > 0x7F) pan = 0x7F;
+	((vu8*)hardchan)[0] = vol;
+	((vu8*)hardchan)[2] = pan;
+}
 
 u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
     s32 noteIndex;                           // sp174
@@ -329,7 +348,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 	{
         note = &gNotes[noteIndex];
 
-		const u8 chanoffset[14] = {0x00, 0x20, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0};
+		const u8 chanoffset[16] = {0x00, 0x20, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0, 0x10, 0x30};
 		vu32* hardchan = (vu32*)(0x04000400 + chanoffset[noteIndex]);
 		
 		// TODO: smarter allocation?
@@ -429,6 +448,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 							curLoadedBook = audioBookSample->book->book;
 							nEntries = audioBookSample->book->order * audioBookSample->book->npredictors;
 							aLoadADPCM(cmd++, nEntries * 16, VIRTUAL_TO_PHYSICAL2(curLoadedBook));
+							numdecode++;
 						}
 						
 						// hm. decode all the shit at once. hope it doesn't asplode!
@@ -452,13 +472,18 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
 						u32 loop = (loopInfo->count != 0) ? 1 : 2;
 						u32 looppnt = loopInfo->start>>1;
+						//if(looppnt!=0 && loop==2) debug(0x88888888, looppnt);
 						
 						hardchan[1] = (u32)&sample_out[0];
 						hardchan[2] = (timer & 0xFFFF) | (looppnt << 16);
 						hardchan[3] = ((len>>1) - looppnt) >> 1;
 						
+						databotte[noteIndex] = (looppnt << 16) | ((((len>>1) - looppnt) >> 1) & 0xFFFF);
+						
+						_set_chan_volume_pan(hardchan, note->curVolLeft, note->curVolRight);
+						
 						// GO!
-						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);
+						hardchan[0] = (hardchan[0] & 0x007F037F) | (loop<<27) | (1<<29) | (1<<31);
 						}
 						else 
 						{
@@ -486,22 +511,29 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 								((vu16*)hardchan)[4] = (timer & 0xFFFF);
 							}
 							
+							/*int len = endPos<<1;
+							u32 looppnt = loopInfo->start>>1;
+							u32 zarg = (looppnt << 16) | ((((len>>1) - looppnt) >> 1) & 0xFFFF);
+							if (zarg != databotte[noteIndex])
+							{
+								// changing the note's length while it's playing? assholes.
+								
+								//debug(0x77777777, databotte[noteIndex]);
+								//debug(0x99999999, zarg);
+								
+								databotte[noteIndex] = zarg;
+								
+								// we have to redecode it and all... ezjfhdjfkdg
+								u8* sample_in = (u8*)sampleAddr;
+								s16* sample_out = chanbuf;
+								aMAJORICC(sample_in, sample_out, len);
+								
+								((vu16*)hardchan)[5] = (looppnt & 0xFFFF);
+								hardchan[3] = ((len>>1) - looppnt) >> 1;
+							}*/
+							
 							// volume shito
-							s16 l = note->curVolLeft;
-							s16 r = note->curVolRight;
-							u32 vol = l+r;
-							u32 pan = (r << 16) / vol;
-							//debug(vol, pan);
-							
-							// volume: goes over 0x2000 -- 0x4000 a safe range I guess
-							// pan: 0x8000=center
-							
-							vol >>= 7;
-							if (vol > 0x7F) vol = 0x7F;
-							pan >>= 9;
-							if (pan > 0x7F) pan = 0x7F;
-							((vu8*)hardchan)[0] = vol;
-							((vu8*)hardchan)[2] = pan;
+							_set_chan_volume_pan(hardchan, note->curVolLeft, note->curVolRight);
 						}
 					}
 					/*else if (curLoadedBook != audioBookSample->book->book)
@@ -772,7 +804,7 @@ u64 *process_envelope_inner(u64 *cmd, struct Note *note, s32 nSamples, u16 inBuf
     // dry right, wet left, wet right with A_AUX flag.
 
     if (note->usesHeadsetPanEffects) {
-        aClearBuffer(cmd++, DMEM_ADDR_NOTE_PAN_TEMP, DEFAULT_LEN_1CH);
+        /*aClearBuffer(cmd++, DMEM_ADDR_NOTE_PAN_TEMP, DEFAULT_LEN_1CH);
 
         switch (headsetPanSettings) {
             case 1:
@@ -790,12 +822,12 @@ u64 *process_envelope_inner(u64 *cmd, struct Note *note, s32 nSamples, u16 inBuf
                 aSetBuffer(cmd++, A_AUX, DMEM_ADDR_RIGHT_CH, DMEM_ADDR_WET_LEFT_CH,
                            DMEM_ADDR_WET_RIGHT_CH);
                 break;
-        }
+        }*/
     } else {
         // It's a bit unclear what the "stereo strong" concept does.
         // Instead of mixing the opposite channel to the normal buffers, the sound is first
         // mixed into a temporary buffer and then subtracted from the normal buffer.
-        if (note->stereoStrongRight) {
+        /*if (note->stereoStrongRight) {
             aClearBuffer(cmd++, DMEM_ADDR_STEREO_STRONG_TEMP_DRY, DEFAULT_LEN_2CH);
             aSetBuffer(cmd++, 0, inBuf, DMEM_ADDR_STEREO_STRONG_TEMP_DRY, nSamples * 2);
             aSetBuffer(cmd++, A_AUX, DMEM_ADDR_RIGHT_CH, DMEM_ADDR_STEREO_STRONG_TEMP_WET,
@@ -808,7 +840,7 @@ u64 *process_envelope_inner(u64 *cmd, struct Note *note, s32 nSamples, u16 inBuf
         } else {
             aSetBuffer(cmd++, 0, inBuf, DMEM_ADDR_LEFT_CH, nSamples * 2);
             aSetBuffer(cmd++, A_AUX, DMEM_ADDR_RIGHT_CH, DMEM_ADDR_WET_LEFT_CH, DMEM_ADDR_WET_RIGHT_CH);
-        }
+        }*/
     }
 
     if (vol->targetLeft == vol->sourceLeft && vol->targetRight == vol->sourceRight
@@ -828,6 +860,7 @@ u64 *process_envelope_inner(u64 *cmd, struct Note *note, s32 nSamples, u16 inBuf
         aSetVolume(cmd++, A_AUX, gVolume, 0, note->reverbVol);
     }
 
+#if 0
     if (gSynthesisReverb.useReverb && note->reverb) {
         aEnvMixer(cmd++, mixerFlags | A_AUX,
                   VIRTUAL_TO_PHYSICAL2(note->synthesisBuffers->mixEnvelopeState));
@@ -857,6 +890,7 @@ u64 *process_envelope_inner(u64 *cmd, struct Note *note, s32 nSamples, u16 inBuf
                  /*out*/ DMEM_ADDR_RIGHT_CH);
         }
     }
+#endif
     return cmd;
 }
 
