@@ -31,6 +31,16 @@ void send_display_list(struct SPTask *spTask) {
     create_next_audio_buffer();
 }
 
+void zonp()
+{
+	if (fifoCheckValue32(FIFO_USER_05))
+	{
+		u32 val1 = fifoGetValue32(FIFO_USER_04);
+		u32 val2 = fifoGetValue32(FIFO_USER_05);
+		printf("D: %08X %08X\n", val1, val2);
+	}
+}
+
 int main(void) {
     static u64 pool[0x165000 / sizeof(u64)];
     main_pool_init(pool, pool + sizeof(pool) / sizeof(pool[0]));
@@ -50,6 +60,7 @@ int main(void) {
     arm7_setup();
 	
 	s16* notebuffer = (s16*)malloc(sizeof(s16) * 16 * 32768);
+	DC_InvalidateRange(notebuffer, sizeof(s16) * 16 * 32768);
 	fifoSendValue32(FIFO_USER_03, notebuffer);
 
     thread5_game_loop(NULL);

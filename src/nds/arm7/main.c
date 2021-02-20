@@ -210,6 +210,12 @@ void powerButtonCB() {
 	exitflag = true;
 }
 
+void debug(u32 val1, u32 val2)
+{
+	fifoSendValue32(FIFO_USER_04, val1);
+	fifoSendValue32(FIFO_USER_05, val2);
+}
+
 //---------------------------------------------------------------------------------
 int main() {
 //---------------------------------------------------------------------------------

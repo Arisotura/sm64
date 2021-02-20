@@ -821,8 +821,8 @@ struct SPTask *create_next_audio_frame_task(void) {
 }
 #include "../nds/nds_include.h"
 void arm7_setup() {
-    fifoSendValue32(FIFO_USER_03, gBankLoadStatus);
-    fifoSendValue32(FIFO_USER_02, gNotes);
+    fifoSendValue32(FIFO_USER_03, ((u32)gBankLoadStatus) - 0x0A000000);
+    fifoSendValue32(FIFO_USER_02, ((u32)gNotes) - 0x0A000000);
 }
 void create_next_audio_buffer() {
     update_game_sound();

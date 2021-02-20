@@ -53,7 +53,8 @@ struct PoolSplit sTemporaryCommonPoolSplit;
 #ifdef VERSION_SH
 u8 gUnkLoadStatus[0x40];
 #endif
-u8 gBankLoadStatus[0x40];
+u8 _gBankLoadStatus[0x40];
+u8* gBankLoadStatus = (u8*)(((u32)&_gBankLoadStatus[0]) + 0x0A000000);
 u8 gSeqLoadStatus[0x100];
 
 #if defined(VERSION_EU) || defined(VERSION_SH)
@@ -245,7 +246,7 @@ void discard_sequence(s32 seqId) {
     }
 }
 
-void *soundAlloc(struct SoundAllocPool *pool, u32 size) {
+void *_soundAlloc(struct SoundAllocPool *pool, u32 size) {
 #if defined(VERSION_EU) || defined(VERSION_SH)
     u8 *start;
     u8 *pos;
@@ -282,6 +283,15 @@ void *soundAlloc(struct SoundAllocPool *pool, u32 size) {
     }
     return start;
 #endif
+}
+
+void *soundAlloc(struct SoundAllocPool *pool, u32 size)
+{
+	u32 ptr = (u32)_soundAlloc(pool, size);
+	//printf("soundAlloc %d -> %08X", size, ptr);
+	if ((ptr >> 24) == 0x02) ptr += 0x0A000000;
+	//printf(" %08X\n", ptr);
+	return (void*)ptr;
 }
 
 #ifdef VERSION_SH
@@ -1314,6 +1324,7 @@ void audio_reset_session(void) {
 #endif
 
     gNotes = soundAlloc(&gNotesAndBuffersPool, gMaxSimultaneousNotes * sizeof(struct Note));
+	//gNotes = (struct Note*)(((u32)gNotes) + 0x0A000000); // HAX
     note_init_all();
     init_note_free_list();
 

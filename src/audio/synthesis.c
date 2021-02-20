@@ -264,11 +264,13 @@ u64 *synthesis_do_one_audio_update(s16 *aiBuf, s32 bufLen, u64 *cmd, s32 updateI
 #ifdef ARM7
 void aMAJORICC(u8* in, s16* out, int nbytes);
 extern s16* notebuffer;
+void debug(u32 val1, u32 val2);
 #else
 // TODO!! GET RID OF THIS
 // like, why is this being compiled on the ARM9
 void aMAJORICC(u8* in, s16* out, int nbytes) {}
 s16 notebuffer[2];
+void debug(u32 val1, u32 val2) {}
 #endif
 
 u16 chanfreq[14] = {0};
@@ -322,7 +324,9 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
     u16 noteSamplesDmemAddrBeforeResampling; // spD6, spAA
 
 
-    for (noteIndex = 0; noteIndex < gMaxSimultaneousNotes; noteIndex++) {
+    //for (noteIndex = 0; noteIndex < gMaxSimultaneousNotes; noteIndex++) 
+    for (noteIndex = gMaxSimultaneousNotes-1; noteIndex >= 0; noteIndex--) 
+	{
         note = &gNotes[noteIndex];
 
 		const u8 chanoffset[14] = {0x00, 0x20, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0};
@@ -333,7 +337,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 		// a note that is more than 1024 samples??
 		// who holds their goddamn piano key for that fucking long
 		// unless they are playing piano while high or something
-		s16* chanbuf = &notebuffer[noteIndex * 4096];
+		s16* chanbuf = &notebuffer[noteIndex * 32768];
 		
         //! This function requires note->enabled to be volatile, but it breaks other functions like note_enable.
         //! Casting to a struct with just the volatile bitfield works, but there may be a better way to match.
@@ -431,6 +435,12 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						u8* sample_in = (u8*)sampleAddr;
 						s16* sample_out = chanbuf;
 						int len = endPos<<1; // 32 output bytes for 9 input bytes??? welp.
+						
+						/*debug(0x33333333, 0x33333333);
+						debug(noteIndex, len);
+						debug(loopInfo->start, loopInfo->end);
+						debug(resamplingRateFixedPoint, loopInfo->count);*/
+						
 						int maxlen = 32768<<1; if (len < maxlen){if (len > maxlen) len = maxlen; // FIXME!!!!!!!
 						aMAJORICC(sample_in, sample_out, len);
 						
@@ -443,10 +453,16 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						
 						hardchan[1] = (u32)&sample_out[0];
 						hardchan[2] = (timer & 0xFFFF) | (looppnt << 16);
-						hardchan[3] = (len>>2) - looppnt;
+						hardchan[3] = ((len>>1) - looppnt) >> 1;
 						
 						// GO!
 						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);}
+						else 
+						{
+							debug(noteIndex, len);
+							debug(loopInfo->start, loopInfo->end);
+							debug(resamplingRateFixedPoint, loopInfo->count);
+						}
 					}
 					else
 					{
@@ -681,6 +697,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 			hardchan[0] = 0;
 			feuauxprisons[noteIndex] = 0;
 		}
+		//break;
     }
 
     t9 = bufLen * 2;
