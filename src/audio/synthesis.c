@@ -271,6 +271,9 @@ void aMAJORICC(u8* in, s16* out, int nbytes) {}
 s16 notebuffer[2];
 #endif
 
+u16 chanfreq[14] = {0};
+u8 feuauxprisons[14] = {0};
+
 u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
     s32 noteIndex;                           // sp174
     struct Note *note;                       // s7
@@ -321,7 +324,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 
     for (noteIndex = 0; noteIndex < gMaxSimultaneousNotes; noteIndex++) {
         note = &gNotes[noteIndex];
-		
+
 		const u8 chanoffset[14] = {0x00, 0x20, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0};
 		vu32* hardchan = (vu32*)(0x04000400 + chanoffset[noteIndex]);
 		
@@ -334,12 +337,22 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 		
         //! This function requires note->enabled to be volatile, but it breaks other functions like note_enable.
         //! Casting to a struct with just the volatile bitfield works, but there may be a better way to match.
-        if (((struct vNote *)note)->enabled && IS_BANK_LOAD_COMPLETE(note->bankId) == FALSE) {
+        if (((struct vNote *)note)->enabled && IS_BANK_LOAD_COMPLETE(note->bankId) == FALSE) 
+		{
             gAudioErrorFlags = (note->bankId << 8) + noteIndex + 0x1000000;
-        } else if (((struct vNote *)note)->enabled) {
+        }
+		else if (((struct vNote *)note)->enabled) 
+		{
             flags = 0;
+			
+			/*if (!feuauxprisons[noteIndex])
+			{
+				feuauxprisons[noteIndex] = 1;
+				note->needsInit = 1;
+			}*/
 
-            if (note->needsInit == TRUE) {
+            if (note->needsInit == TRUE) 
+			{
                 flags = A_INIT;
                 note->samplePosInt = 0;
                 note->samplePosFrac = 0;
@@ -363,6 +376,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 			resamplingRate = note->frequency;
 
             resamplingRateFixedPoint = (u16)(s32)(resamplingRate * 32768.0f);
+			//resamplingRateFixedPoint >>= 1; // HAX
             samplesLenFixedPoint = note->samplePosFrac + (resamplingRateFixedPoint * bufLen) * 2;
             note->samplePosFrac = samplesLenFixedPoint & 0xFFFF; // 16-bit store, can't reuse
 			
@@ -380,8 +394,10 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                 noteSamplesDmemAddrBeforeResampling = DMEM_ADDR_UNCOMPRESSED_NOTE + note->samplePosInt * 2;
                 note->samplePosInt += (samplesLenFixedPoint >> 0x10);*/
                 flags = 0;
+				hardchan[0] = 0;
             }
-            else {
+            else //if (resamplingRate <= 1.0)
+			{
                 // ADPCM note
 				
 				audioBookSample = note->sound->sample;
@@ -397,10 +413,14 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 
 
 					if (flags == A_INIT)
+					//if (!(hardchan[0] & (1<<31)))
 					{
 						// init note shit here
 						
-						if (curLoadedBook != audioBookSample->book->book) {
+						hardchan[0] = 0;
+						
+						//if (curLoadedBook != audioBookSample->book->book) 
+						{
 							u32 nEntries; // v1
 							curLoadedBook = audioBookSample->book->book;
 							nEntries = audioBookSample->book->order * audioBookSample->book->npredictors;
@@ -414,19 +434,50 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						int maxlen = 32768<<1; if (len < maxlen){if (len > maxlen) len = maxlen; // FIXME!!!!!!!
 						aMAJORICC(sample_in, sample_out, len);
 						
+						chanfreq[noteIndex] = resamplingRateFixedPoint;
+						
 						// blarg
 						u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
-						u32 loop = 0;//note->restart ? 1 : 0;
+						u32 loop = (loopInfo->count != 0) ? 1 : 2;
 						u32 looppnt = loopInfo->start>>1;
 						
-						hardchan[0] = 0;
 						hardchan[1] = (u32)&sample_out[0];
 						hardchan[2] = (timer & 0xFFFF) | (looppnt << 16);
-						hardchan[3] = len>>2;
+						hardchan[3] = (len>>2) - looppnt;
 						
 						// GO!
 						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);}
 					}
+					else
+					{
+						if (resamplingRateFixedPoint != chanfreq[noteIndex])
+						{
+							chanfreq[noteIndex] = resamplingRateFixedPoint;
+						
+							// blarg
+							u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
+							((vu16*)hardchan)[4] = (timer & 0xFFFF);
+						}
+						
+						/*if (note->restart)
+						{
+							// ???
+						}
+						else*/
+						{
+							if (!(hardchan[0] & (1<<31)))
+							{
+								note->samplePosInt = 0;
+								note->finished = 1;
+								((struct vNote *)note)->enabled = 0;
+							}
+						}
+					}
+					/*else if (curLoadedBook != audioBookSample->book->book)
+					{
+						// ?????????
+						hardchan[0] = 0;
+					}*/
 
                     /*if (note->finished != FALSE) {
                         break;
@@ -607,8 +658,8 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                 note->needsInit = FALSE;
             }
 
-            cmd = final_resample(cmd, note, bufLen * 2, resamplingRateFixedPoint,
-                                 noteSamplesDmemAddrBeforeResampling, flags);
+            //cmd = final_resample(cmd, note, bufLen * 2, resamplingRateFixedPoint,
+            //                     noteSamplesDmemAddrBeforeResampling, flags);
 
             if (note->headsetPanRight != 0 || note->prevHeadsetPanRight != 0) {
                 leftRight = 1;
@@ -628,15 +679,16 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 		{
 			// turn it off, I guess?
 			hardchan[0] = 0;
+			feuauxprisons[noteIndex] = 0;
 		}
     }
 
     t9 = bufLen * 2;
     aSetBuffer(cmd++, 0, 0, DMEM_ADDR_TEMP, t9);
-    aInterleave(cmd++, DMEM_ADDR_LEFT_CH, DMEM_ADDR_RIGHT_CH);
+    //aInterleave(cmd++, DMEM_ADDR_LEFT_CH, DMEM_ADDR_RIGHT_CH);
     t9 *= 2;
     aSetBuffer(cmd++, 0, 0, DMEM_ADDR_TEMP, t9);
-    aSaveBuffer(cmd++, VIRTUAL_TO_PHYSICAL2(aiBuf));
+    //aSaveBuffer(cmd++, VIRTUAL_TO_PHYSICAL2(aiBuf));
 
     return cmd;
 }

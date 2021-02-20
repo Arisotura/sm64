@@ -281,10 +281,10 @@ int main() {
         s16 audio_buffer[528 * 2];
         synthesis_execute(cmdBuf, &writtenCmds, audio_buffer, 528);
 
-        for (int i = 0; i < 528; i++) {
+        /*for (int i = 0; i < 528; i++) {
             buffer_left[i]  = audio_buffer[i * 2 + 0];
             buffer_right[i] = audio_buffer[i * 2 + 1];
-        }
+        }*/
 
         //SCHANNEL_CR(0) |= SCHANNEL_ENABLE;
         //SCHANNEL_CR(1) |= SCHANNEL_ENABLE;
