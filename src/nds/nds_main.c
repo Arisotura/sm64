@@ -49,7 +49,7 @@ int main(void) {
 
     arm7_setup();
 	
-	s16* notebuffer = (s16*)malloc(sizeof(s16) * 16 * 4096);
+	s16* notebuffer = (s16*)malloc(sizeof(s16) * 16 * 32768);
 	fifoSendValue32(FIFO_USER_03, notebuffer);
 
     thread5_game_loop(NULL);

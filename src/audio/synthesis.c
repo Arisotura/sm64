@@ -345,7 +345,7 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                 note->samplePosFrac = 0;
             }
 
-            if (note->frequency < US_FLOAT(2.0)) {
+            /*if (note->frequency < US_FLOAT(2.0)) {
                 nParts = 1;
                 if (note->frequency > US_FLOAT(1.99996)) {
                     note->frequency = US_FLOAT(1.99996);
@@ -358,7 +358,9 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
                     note->frequency = US_FLOAT(3.99993);
                 }
                 resamplingRate = note->frequency * US_FLOAT(.5);
-            }
+            }*/
+			nParts = 1; // zorp
+			resamplingRate = note->frequency;
 
             resamplingRateFixedPoint = (u16)(s32)(resamplingRate * 32768.0f);
             samplesLenFixedPoint = note->samplePosFrac + (resamplingRateFixedPoint * bufLen) * 2;
@@ -409,19 +411,21 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						u8* sample_in = (u8*)sampleAddr;
 						s16* sample_out = chanbuf;
 						int len = endPos<<1; // 32 output bytes for 9 input bytes??? welp.
-						if (len > 4096) len = 4096; // FIXME!!!!!!!
+						int maxlen = 32768<<1; if (len < maxlen){if (len > maxlen) len = maxlen; // FIXME!!!!!!!
 						aMAJORICC(sample_in, sample_out, len);
 						
 						// blarg
 						u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
+						u32 loop = 0;//note->restart ? 1 : 0;
+						u32 looppnt = loopInfo->start>>1;
 						
 						hardchan[0] = 0;
 						hardchan[1] = (u32)&sample_out[0];
-						hardchan[2] = (timer & 0xFFFF);
+						hardchan[2] = (timer & 0xFFFF) | (looppnt << 16);
 						hardchan[3] = len>>2;
 						
 						// GO!
-						hardchan[0] = (127) | (64 << 16) | (1<<27) | (1<<29) | (1<<31);
+						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);}
 					}
 
                     /*if (note->finished != FALSE) {
