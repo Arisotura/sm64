@@ -278,6 +278,34 @@ u8 feuauxprisons[16] = {0};
 u32 databotte[16] = {0};
 u32 numdecode = 0;
 
+u32 decode_pos[16] = {0};
+
+void note_do_decode(int id, struct Note* note, s16* sample_out)
+{
+	// we try to decode atleast one audio-frame worth of samples
+	
+	u16 notefreq = (u16)(s32)(note->frequency * 32768.0f);
+	u16 nsamples = (notefreq + 3) >> 2;
+	
+	struct AudioBankSample* audioBookSample = note->sound->sample;
+
+	struct AdpcmLoop* loopInfo = audioBookSample->loop;
+	int notelen = loopInfo->end;
+	u8* sample_in = audioBookSample->sampleAddr;
+	
+	u32 dpos = decode_pos[id];
+	if (dpos >= notelen) return;
+	if ((dpos + nsamples) > notelen)
+		nsamples = notelen - dpos;
+	
+	nsamples = (nsamples + 15) & ~15;
+	sample_in += (dpos * 9) >> 4;
+	sample_out += dpos;
+	
+	aMAJORICC(sample_in, sample_out, nsamples<<1);
+	decode_pos[id] += nsamples;
+}
+
 void _set_chan_volume_pan(vu32* hardchan, s16 l, s16 r)
 {
 	u32 vol = l+r;
@@ -397,6 +425,10 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
             }*/
 			nParts = 1; // zorp
 			resamplingRate = note->frequency;
+			
+			// one synth run = 0x2217C cycles
+			// channel: F/4 samples per run
+			// channel timer: T cycles per sample
 
             resamplingRateFixedPoint = (u16)(s32)(resamplingRate * 32768.0f);
 			//resamplingRateFixedPoint >>= 1; // HAX
@@ -464,7 +496,9 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						int maxlen = 32768<<1; 
 						if (len < maxlen)
 						{if (len > maxlen) len = maxlen; // FIXME!!!!!!!
-						aMAJORICC(sample_in, sample_out, len);
+						//aMAJORICC(sample_in, sample_out, len);
+						decode_pos[noteIndex] = 0;
+						note_do_decode(noteIndex, note, sample_out);
 						
 						chanfreq[noteIndex] = resamplingRateFixedPoint;
 						
@@ -502,6 +536,8 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						}
 						else
 						{
+							note_do_decode(noteIndex, note, chanbuf);
+							
 							if (resamplingRateFixedPoint != chanfreq[noteIndex])
 							{
 								chanfreq[noteIndex] = resamplingRateFixedPoint;
