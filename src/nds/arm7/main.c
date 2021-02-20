@@ -286,14 +286,14 @@ int main() {
     SCHANNEL_TIMER(1) = SOUND_FREQ(32000);
     SCHANNEL_CR(1) = SOUND_VOL(127) | SOUND_PAN(127) | (1 << 29) | SOUND_ONE_SHOT;*/
 	
-	// 240Hz ~= 0x2217A cycles
+	// 240Hz ~= 0x2217C cycles
 	TIMER_CR(0) = 0;
 	TIMER_CR(1) = 0;
 	irqSet(IRQ_TIMER(1), audio_generator);
 	irqEnable(IRQ_TIMER(1));
-	TIMER_DATA(0) = 0x10000-0x217A;
+	TIMER_DATA(0) = 0x10000-0x4;
 	TIMER_CR(0) = TIMER_ENABLE;
-	TIMER_DATA(1) = 0x10000-0x2;
+	TIMER_DATA(1) = 0x10000-0x885F;
 	TIMER_CR(1) = TIMER_ENABLE | TIMER_IRQ_REQ | TIMER_CASCADE;
 
 	// Keep the ARM7 mostly idle
