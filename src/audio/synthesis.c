@@ -441,7 +441,9 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						debug(loopInfo->start, loopInfo->end);
 						debug(resamplingRateFixedPoint, loopInfo->count);*/
 						
-						int maxlen = 32768<<1; if (len < maxlen){if (len > maxlen) len = maxlen; // FIXME!!!!!!!
+						int maxlen = 32768<<1; 
+						if (len < maxlen)
+						{if (len > maxlen) len = maxlen; // FIXME!!!!!!!
 						aMAJORICC(sample_in, sample_out, len);
 						
 						chanfreq[noteIndex] = resamplingRateFixedPoint;
@@ -456,7 +458,8 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 						hardchan[3] = ((len>>1) - looppnt) >> 1;
 						
 						// GO!
-						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);}
+						hardchan[0] = (127) | (64 << 16) | (loop<<27) | (1<<29) | (1<<31);
+						}
 						else 
 						{
 							debug(noteIndex, len);
@@ -466,27 +469,39 @@ u64 *synthesis_process_notes(s16 *aiBuf, s32 bufLen, u64 *cmd) {
 					}
 					else
 					{
-						if (resamplingRateFixedPoint != chanfreq[noteIndex])
+						if (!(hardchan[0] & (1<<31)))
 						{
-							chanfreq[noteIndex] = resamplingRateFixedPoint;
-						
-							// blarg
-							u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
-							((vu16*)hardchan)[4] = (timer & 0xFFFF);
+							note->samplePosInt = 0;
+							note->finished = 1;
+							((struct vNote *)note)->enabled = 0;
 						}
-						
-						/*if (note->restart)
+						else
 						{
-							// ???
-						}
-						else*/
-						{
-							if (!(hardchan[0] & (1<<31)))
+							if (resamplingRateFixedPoint != chanfreq[noteIndex])
 							{
-								note->samplePosInt = 0;
-								note->finished = 1;
-								((struct vNote *)note)->enabled = 0;
+								chanfreq[noteIndex] = resamplingRateFixedPoint;
+							
+								// blarg
+								u32 timer = 0x10000 - (16756991 / (u32)resamplingRateFixedPoint);
+								((vu16*)hardchan)[4] = (timer & 0xFFFF);
 							}
+							
+							// volume shito
+							s16 l = note->curVolLeft;
+							s16 r = note->curVolRight;
+							u32 vol = l+r;
+							u32 pan = (r << 16) / vol;
+							//debug(vol, pan);
+							
+							// volume: goes over 0x2000 -- 0x4000 a safe range I guess
+							// pan: 0x8000=center
+							
+							vol >>= 7;
+							if (vol > 0x7F) vol = 0x7F;
+							pan >>= 9;
+							if (pan > 0x7F) pan = 0x7F;
+							((vu8*)hardchan)[0] = vol;
+							((vu8*)hardchan)[2] = pan;
 						}
 					}
 					/*else if (curLoadedBook != audioBookSample->book->book)

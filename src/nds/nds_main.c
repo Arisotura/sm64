@@ -33,7 +33,7 @@ void send_display_list(struct SPTask *spTask) {
 
 void zonp()
 {
-	if (fifoCheckValue32(FIFO_USER_05))
+	while (fifoCheckValue32(FIFO_USER_05))
 	{
 		u32 val1 = fifoGetValue32(FIFO_USER_04);
 		u32 val2 = fifoGetValue32(FIFO_USER_05);
